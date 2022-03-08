@@ -129,7 +129,6 @@ class Competitor(ICompetitor, IOrderListener):
                 self.sell_prices.pop()
 
         self.unhedged_etf_lots.apply_position_delta(volume if order.side == Side.BUY else -volume)
-        self.logger.info("Order filled for %d lots relative position now %d", volume if order.side == Side.BUY else -volume, self.unhedged_etf_lots.relative_position)
 
         self.match_events.fill(now, self.name, order.client_order_id, order.instrument, order.side, price, volume, fee)
         last_traded: int = self.future_book.last_traded_price() or round(self.future_book.midpoint_price())
@@ -202,7 +201,6 @@ class Competitor(ICompetitor, IOrderListener):
         volume_traded, average_price = self.future_book.try_trade(side_, price, volume)
         if volume_traded > 0:
             self.unhedged_etf_lots.apply_position_delta(volume_traded if side_ == Side.BID else -volume_traded)
-            self.logger.info("Hedge trade for %d lots relative position now %d", volume_traded if side_ == Side.BID else -volume_traded, self.unhedged_etf_lots.relative_position)
             self.match_events.hedge(now, self.name, client_order_id, Instrument.FUTURE, side_, average_price,
                                     volume_traded)
             self.account.transact(Instrument.FUTURE, side_, average_price, volume_traded, 0)

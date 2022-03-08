@@ -299,19 +299,21 @@ class OrderBook(object):
 
         if side == Side.ASK:
             i = len(self.__bid_prices) - 1
-            while total_volume < volume and i >= 0 and self.__bid_prices[i] >= limit_price:
+            while total_volume < volume and i >= 0 and self.__bid_prices[i] and self.__bid_prices[i] >= limit_price:
                 price: int = self.__bid_prices[i]
                 available: int = self.__total_volumes[price]
-                weight: int = volume if volume <= available else available
+                required: int = volume - total_volume
+                weight: int = required if required <= available else available
                 total_volume += weight
                 total_value += weight * price
                 i -= 1
         else:
             i = len(self.__ask_prices) - 1
-            while total_volume < volume and i >= 0 and -self.__ask_prices[i] <= limit_price:
+            while total_volume < volume and i >= 0 and -self.__ask_prices[i] and -self.__ask_prices[i] <= limit_price:
                 price: int = -self.__ask_prices[i]
                 available: int = self.__total_volumes[price]
-                weight: int = volume if volume <= available else available
+                required: int = volume - total_volume
+                weight: int = required if required <= available else available
                 total_volume += weight
                 total_value += weight * price
                 i -= 1
