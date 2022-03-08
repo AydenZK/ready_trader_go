@@ -43,8 +43,10 @@ class AutoTrader(BaseAutoTrader):
         super().__init__(loop, team_name, secret)
         self.order_ids = itertools.count(1)
         self.bids = set()
+        self.future_bids = set()
         self.asks = set()
-        self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = 0
+        self.future_asks = set()
+        self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
 
     def on_error_message(self, client_order_id: int, error_message: bytes) -> None:
         """Called when the exchange detects an error.
@@ -67,6 +69,10 @@ class AutoTrader(BaseAutoTrader):
         """
         self.logger.info("received hedge filled for order %d with average price %d and volume %d", client_order_id,
                          price, volume)
+        if client_order_id in self.future_asks:
+            self.futures_position -= volume
+        if client_order_id in self.future_bids:
+            self.futures_position += volume
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
@@ -77,6 +83,7 @@ class AutoTrader(BaseAutoTrader):
         prices are reported along with the volume available at each of those
         price levels.
         """
+        self.logger.info(f"POSITION={self.position}")
         self.logger.info("received order book for instrument %d with sequence number %d", instrument,
                          sequence_number)
         if instrument == Instrument.FUTURE:
@@ -114,11 +121,18 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.bids:
             self.position += volume
-            self.send_hedge_order(next(self.order_ids), Side.ASK, MINIMUM_BID, volume)
+            if self.position + self.futures_position >= 10:
+                order_id = next(self.order_ids)
+                self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, volume) # selling futures
+                self.future_asks.add(order_id)
         elif client_order_id in self.asks:
             self.position -= volume
-            self.send_hedge_order(next(self.order_ids), Side.BID,
-                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume)
+            if self.position + self.futures_position <= -10:
+                order_id = next(self.order_ids)
+                self.send_hedge_order(order_id, Side.BID,
+                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # buying futures
+                self.future_bids.add(order_id)
+        self.logger.info(f"POSITION={self.position}")
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
