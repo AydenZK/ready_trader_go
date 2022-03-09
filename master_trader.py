@@ -193,12 +193,14 @@ class AutoTrader(BaseAutoTrader):
             self.etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
             if self.futures.best_bid > self.etfs.best_bid:
                 if 0 < self.etfs.best_ask_vol <= self.futures.best_bid_vol and self.etfs.best_ask < self.futures.best_bid:
-                    trade_vol = min(ARBITRAGE_POS_LIMIT-self.position, ARBITRAGE_POS_LIMIT+self.futures_position, self.etfs.best_ask_vol)
+                    full_trade_vol = min(ARBITRAGE_POS_LIMIT-self.position, ARBITRAGE_POS_LIMIT+self.futures_position, self.etfs.best_ask_vol)
+                    trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "FUTURES_POSITION": self.futures_position,
+                            "FULL_TRADE_VOL": full_trade_vol,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
                             "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}, ID: {next_id}"
                         }
@@ -209,12 +211,14 @@ class AutoTrader(BaseAutoTrader):
 
             if self.etfs.best_bid > self.futures.best_bid:
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
-                    trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, ARBITRAGE_POS_LIMIT-self.position, self.etfs.best_bid_vol)
+                    full_trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, ARBITRAGE_POS_LIMIT-self.position, self.etfs.best_bid_vol)
+                    trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "FUTURES_POSITION": self.futures_position,
+                            "FULL_TRADE_VOL": full_trade_vol,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
                             "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}, ID: {next_id}"
                         }
@@ -243,7 +247,7 @@ class AutoTrader(BaseAutoTrader):
                 }
                 self.logger.info(f"CUSTOM LOG: {log}")
                 self.send_hedge_order(next_id, Side.SELL, MINIMUM_BID, volume) # selling futures
-                self.future_asks(next_id)
+                self.future_asks.add(next_id)
             elif client_order_id in self.asks:
                 self.position -= volume
                 next_id = next(self.order_ids)
@@ -254,7 +258,7 @@ class AutoTrader(BaseAutoTrader):
                 }
                 self.logger.info(f"CUSTOM LOG: {log}")
                 self.send_hedge_order(next_id, Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
-                self.future_bids(next_id)
+                self.future_bids.add(next_id)
         else:
             if client_order_id in self.bids:
                 self.position += volume

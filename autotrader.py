@@ -167,12 +167,14 @@ class AutoTrader(BaseAutoTrader):
         if instrument == Instrument.ETF:
             if self.futures.best_bid > self.etfs.best_bid:
                 if 0 < self.etfs.best_ask_vol <= self.futures.best_bid_vol and self.etfs.best_ask < self.futures.best_bid:
-                    trade_vol = min(POSITION_LIMIT-self.position, self.etfs.best_ask_vol)
+                    full_trade_vol = min(POSITION_LIMIT-self.position, self.etfs.best_ask_vol)
+                    trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
+                            "FULL_TRADE_VOL": full_trade_vol,
                             "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}, ID: {next_id}"
                         }
                         self.logger.info(f"CUSTOM LOG: {log}")
@@ -181,12 +183,14 @@ class AutoTrader(BaseAutoTrader):
 
             if self.etfs.best_bid > self.futures.best_bid:
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
-                    trade_vol = min(POSITION_LIMIT+self.position, self.etfs.best_bid_vol)
+                    full_trade_vol = min(POSITION_LIMIT+self.position, self.etfs.best_bid_vol)
+                    trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
+                            "FULL_TRADE_VOL": full_trade_vol,
                             "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}, ID: {next_id}"
                         }
                         self.logger.info(f"CUSTOM LOG: {log}")
