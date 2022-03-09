@@ -36,6 +36,10 @@ class OrderBook:
         self.ask_volumes = ask_volumes
         self.bid_prices = bid_prices
         self.bid_volumes = bid_volumes
+        self.best_bid = bid_prices[0]
+        self.best_ask = ask_prices[0]
+        self.best_bid_vol = bid_volumes[0]
+        self.best_ask_vol = ask_volumes[0]
 
 class Historical:
     def __init__(self):
@@ -156,28 +160,38 @@ class AutoTrader(BaseAutoTrader):
         # adds to historical prices (mid price)
         self.historical.update(instrument, np.mean([bid_prices[0], ask_prices[0]]))
         if instrument == Instrument.FUTURE:
-            self.latest_futures = OrderBook(sequence_number, ask_prices,ask_volumes, bid_prices, bid_volumes)
+            self.futures = OrderBook(sequence_number, ask_prices,ask_volumes, bid_prices, bid_volumes)
         else:
-            self.latest_etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
+            self.etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
     
         if instrument == Instrument.ETF:
-            if self.latest_futures.bid_prices[0] > self.latest_etfs.bid_prices[0]:
-                self.logger.info(f"ARB OPP. FOUND: ETF ASK: {self.latest_etfs.ask_prices[0]}, FUT BID: {self.latest_futures.bid_prices[0]}")
-                if 0 < self.latest_etfs.ask_volumes[0] <= self.latest_futures.bid_volumes[0] and self.latest_etfs.ask_prices[0] < self.latest_futures.bid_prices[0]:
-                    trade_vol = min(100-self.position, self.latest_etfs.ask_volumes[0])
-                    self.logger.info(f"CAPITALISING: ETF ASK: {self.latest_etfs.ask_prices[0]}, FUT BID: {self.latest_futures.bid_prices[0]}, TRADE_VOL: {trade_vol} ETF_ASK_VOL: {self.latest_etfs.ask_volumes[0]}")
-                    next_id = next(self.order_ids)
-                    self.send_insert_order(next_id, Side.BUY, self.latest_etfs.ask_prices[0], trade_vol, Lifespan.FAK) # buy etf
-                    self.bids.add(next_id)
+            if self.futures.best_bid > self.etfs.best_bid:
+                if 0 < self.etfs.best_ask_vol <= self.futures.best_bid_vol and self.etfs.best_ask < self.futures.best_bid:
+                    trade_vol = min(POSITION_LIMIT-self.position, self.etfs.best_ask_vol)
+                    if trade_vol > 0:
+                        log = {
+                            "POSITION": self.position,
+                            "MAX_VOLUME": self.etfs.best_bid_vol,
+                            "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}"
+                        }
+                        self.logger.info(f"CUSTOM LOG: {log}")
+                        next_id = next(self.order_ids)
+                        self.send_insert_order(next_id, Side.BUY, self.etfs.best_ask, trade_vol, Lifespan.FAK) # buy etf
+                        self.bids.add(next_id)
 
-            if self.latest_etfs.bid_prices[0] > self.latest_futures.bid_prices[0]:
-                self.logger.info(f"ARB OPP. FOUND: FUT ASK: {self.latest_futures.ask_prices[0]}, ETF BID: {self.latest_etfs.bid_prices[0]}")
-                if 0 < self.latest_etfs.bid_volumes[0] <= self.latest_futures.ask_volumes[0] and self.latest_futures.ask_prices[0] < self.latest_etfs.bid_prices[0]:
-                    trade_vol = min(100+self.position, self.latest_etfs.bid_volumes[0])
-                    self.logger.info(f"CAPITALISING: FUT ASK: {self.latest_futures.ask_prices[0]}, ETF BID: {self.latest_etfs.bid_prices[0]}, TRADE_VOL: {trade_vol} ETF_BID_VOL: {self.latest_etfs.bid_volumes[0]}")
-                    next_id = next(self.order_ids)
-                    self.send_insert_order(next_id, Side.SELL, self.latest_etfs.bid_prices[0], trade_vol, Lifespan.FAK) # sell etf
-                    self.asks.add(next_id)
+            if self.etfs.best_bid > self.futures.best_bid:
+                if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
+                    trade_vol = min(POSITION_LIMIT+self.position, self.etfs.best_bid_vol)
+                    if trade_vol > 0:
+                        log = {
+                            "POSITION": self.position,
+                            "MAX_VOLUME": self.etfs.best_bid_vol,
+                            "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}"
+                        }
+                        self.logger.info(f"CUSTOM LOG: {log}")
+                        next_id = next(self.order_ids)
+                        self.send_insert_order(next_id, Side.SELL, self.etfs.best_bid, trade_vol, Lifespan.FAK) # sell etf
+                        self.asks.add(next_id)
                         
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
         """Called when when of your orders is filled, partially or fully.
