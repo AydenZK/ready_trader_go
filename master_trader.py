@@ -243,6 +243,7 @@ class AutoTrader(BaseAutoTrader):
                 }
                 self.logger.info(f"CUSTOM LOG: {log}")
                 self.send_hedge_order(next_id, Side.SELL, MINIMUM_BID, volume) # selling futures
+                self.future_asks(next_id)
             elif client_order_id in self.asks:
                 self.position -= volume
                 next_id = next(self.order_ids)
@@ -253,6 +254,7 @@ class AutoTrader(BaseAutoTrader):
                 }
                 self.logger.info(f"CUSTOM LOG: {log}")
                 self.send_hedge_order(next_id, Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
+                self.future_bids(next_id)
         else:
             if client_order_id in self.bids:
                 self.position += volume
