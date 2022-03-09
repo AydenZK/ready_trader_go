@@ -237,6 +237,11 @@ class AutoTrader(BaseAutoTrader):
         self.logger.info("received trade ticks for instrument %d with sequence number %d", instrument,
                          sequence_number)
 
+    def one_tick_diff(self, x, y):
+        if x == y:
+            return x-1*TICK_SIZE_IN_CENTS, y+1*TICK_SIZE_IN_CENTS
+        return x,y 
+
     def price(self, mid):
         if self.historical.move==0:
             return 0, 0
@@ -246,4 +251,4 @@ class AutoTrader(BaseAutoTrader):
         else:
             sell_prob=0.45+self.position*0.0045
             buy_prob=0.45-self.position*0.0005
-        return int((mid+self.historical.move*st.norm.ppf(buy_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS),int((mid+self.historical.move*st.norm.ppf(1-sell_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS)
+        return self.one_tick_diff(int((mid+self.historical.move*st.norm.ppf(buy_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS),int((mid+self.historical.move*st.norm.ppf(1-sell_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS))

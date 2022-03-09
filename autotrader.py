@@ -169,13 +169,13 @@ class AutoTrader(BaseAutoTrader):
                 if 0 < self.etfs.best_ask_vol <= self.futures.best_bid_vol and self.etfs.best_ask < self.futures.best_bid:
                     trade_vol = min(POSITION_LIMIT-self.position, self.etfs.best_ask_vol)
                     if trade_vol > 0:
+                        next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
-                            "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}"
+                            "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}, ID: {next_id}"
                         }
                         self.logger.info(f"CUSTOM LOG: {log}")
-                        next_id = next(self.order_ids)
                         self.send_insert_order(next_id, Side.BUY, self.etfs.best_ask, trade_vol, Lifespan.FAK) # buy etf
                         self.bids.add(next_id)
 
@@ -183,13 +183,13 @@ class AutoTrader(BaseAutoTrader):
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
                     trade_vol = min(POSITION_LIMIT+self.position, self.etfs.best_bid_vol)
                     if trade_vol > 0:
+                        next_id = next(self.order_ids)
                         log = {
                             "POSITION": self.position,
                             "MAX_VOLUME": self.etfs.best_bid_vol,
-                            "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}"
+                            "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}, ID: {next_id}"
                         }
                         self.logger.info(f"CUSTOM LOG: {log}")
-                        next_id = next(self.order_ids)
                         self.send_insert_order(next_id, Side.SELL, self.etfs.best_bid, trade_vol, Lifespan.FAK) # sell etf
                         self.asks.add(next_id)
                         
