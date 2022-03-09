@@ -59,11 +59,11 @@ class Historical:
 
     @property
     def std_etf(self):
-        return self.min_len_to_execute(np.std(self.history_etf))
+        return self.min_len_to_execute(np.std(self.history_etf), safe_result=1)
 
     @property
     def std_future(self):
-        return self.min_len_to_execute(np.std(self.history_future))
+        return self.min_len_to_execute(np.std(self.history_future), safe_result=1)
 
     @property
     def corr(self):
