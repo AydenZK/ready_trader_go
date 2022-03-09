@@ -17,6 +17,7 @@
 #     <https://www.gnu.org/licenses/>.
 import asyncio
 import itertools
+import numpy as np
 
 from typing import List
 
@@ -27,6 +28,56 @@ LOT_SIZE = 10
 POSITION_LIMIT = 100
 TICK_SIZE_IN_CENTS = 100
 
+class Historical:
+    def __init__(self):
+        self.historical_prices = {
+            Instrument.FUTURE: [], # Future
+            Instrument.ETF: []  # ETF
+        }
+
+    def update(self, instrument, price):
+        self.historical_prices[instrument].append(price)
+
+    @property
+    def min_time(self):
+        return min(
+            len(self.historical_prices[Instrument.FUTURE]), 
+            len(self.historical_prices[Instrument.ETF]))
+
+    def min_len_to_execute(self, result, length=10, safe_result=0):
+        if self.min_time >= length:
+            return result
+        return safe_result
+
+    @property
+    def history_future(self):
+        return self.historical_prices[Instrument.FUTURE][:self.min_time]
+
+    @property
+    def history_etf(self):
+        return self.historical_prices[Instrument.ETF][:self.min_time]
+
+    @property
+    def std_etf(self):
+        return self.min_len_to_execute(np.std(self.history_etf))
+
+    @property
+    def std_future(self):
+        return self.min_len_to_execute(np.std(self.history_future))
+
+    @property
+    def corr(self):
+        return self.min_len_to_execute(np.corrcoef(self.history_etf, self.history_future)[0][1])
+    
+    @property
+    def cov(self):
+        return self.min_len_to_execute(self.corr * self.std_etf * self.std_future)
+
+    @property
+    def beta(self):
+        """beta of stock against future"""
+        return self.min_len_to_execute(self.cov / (self.std_future**2))
+    
 
 class AutoTrader(BaseAutoTrader):
     """Example Auto-trader.
@@ -43,8 +94,15 @@ class AutoTrader(BaseAutoTrader):
         super().__init__(loop, team_name, secret)
         self.order_ids = itertools.count(1)
         self.bids = set()
+        self.future_bids = set()
         self.asks = set()
-        self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = 0
+        self.future_asks = set()
+        self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
+        self.historical = Historical()
+
+
+    def get_total_position(self):
+        return self.position + self.futures_position
 
     def on_error_message(self, client_order_id: int, error_message: bytes) -> None:
         """Called when the exchange detects an error.
@@ -67,6 +125,10 @@ class AutoTrader(BaseAutoTrader):
         """
         self.logger.info("received hedge filled for order %d with average price %d and volume %d", client_order_id,
                          price, volume)
+        if client_order_id in self.future_asks:
+            self.futures_position -= volume
+        if client_order_id in self.future_bids:
+            self.futures_position += volume
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
@@ -79,6 +141,9 @@ class AutoTrader(BaseAutoTrader):
         """
         self.logger.info("received order book for instrument %d with sequence number %d", instrument,
                          sequence_number)
+        # adds to historical prices (mid price)
+        self.historical.update(instrument, np.mean([bid_prices[0], ask_prices[0]]))
+        self.logger.info(f"BETA: {self.historical.beta}")
         if instrument == Instrument.FUTURE:
             price_adjustment = - (self.position // LOT_SIZE) * TICK_SIZE_IN_CENTS
             new_bid_price = bid_prices[0] + price_adjustment if bid_prices[0] != 0 else 0
@@ -114,11 +179,19 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.bids:
             self.position += volume
-            self.send_hedge_order(next(self.order_ids), Side.ASK, MINIMUM_BID, volume)
+            total_position = self.get_total_position()
+            if total_position >= 10:
+                order_id = next(self.order_ids)
+                self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, volume) # selling futures
+                self.future_asks.add(order_id)
         elif client_order_id in self.asks:
             self.position -= volume
-            self.send_hedge_order(next(self.order_ids), Side.BID,
-                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume)
+            total_position = self.get_total_position()
+            if total_position <= -10:
+                order_id = next(self.order_ids)
+                self.send_hedge_order(order_id, Side.BID,
+                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # buying futures
+                self.future_bids.add(order_id)
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
