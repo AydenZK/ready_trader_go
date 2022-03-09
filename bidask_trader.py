@@ -153,9 +153,6 @@ class AutoTrader(BaseAutoTrader):
         if instrument == Instrument.FUTURE:
             new_bid_price, new_ask_price = self.price(np.mean([bid_prices[0], ask_prices[0]]))
             self.logger.info("Prices: %d, %d",new_bid_price, new_ask_price)
-            self.logger.info(self.bids)
-            self.logger.info(self.asks)
-            self.logger.info(self.position)
             if self.bid_id != 0 and new_bid_price not in (self.bid_price, 0):
                 self.send_cancel_order(self.bid_id)
                 self.bid_id = 0
@@ -174,7 +171,7 @@ class AutoTrader(BaseAutoTrader):
                 self.ask_price = new_ask_price
                 self.send_insert_order(self.ask_id, Side.SELL, new_ask_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
                 self.asks.add(self.ask_id)
-
+            self.logger.info("Bids: %d, Asks %d", self.bids, self.asks)
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
         """Called when when of your orders is filled, partially or fully.
 
@@ -199,7 +196,8 @@ class AutoTrader(BaseAutoTrader):
                 self.send_hedge_order(order_id, Side.BID,
                                   MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # buying futures
                 self.future_bids.add(order_id)
-
+        self.logger.info("Position: %d", self.position)
+        
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
         """Called when the status of one of your orders changes.
@@ -222,7 +220,8 @@ class AutoTrader(BaseAutoTrader):
             # It could be either a bid or an ask
             self.bids.discard(client_order_id)
             self.asks.discard(client_order_id)
-
+            self.logger.info("Bids: %d, Asks %d", self.bids, self.asks)
+            
     def on_trade_ticks_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
         """Called periodically when there is trading activity on the market.
