@@ -141,9 +141,9 @@ class AutoTrader(BaseAutoTrader):
         """
         self.logger.info("received order book for instrument %d with sequence number %d", instrument,
                          sequence_number)
+        # self.logger.info(f"TIME: {self.event_loop.time()}")
         # adds to historical prices (mid price)
         self.historical.update(instrument, np.mean([bid_prices[0], ask_prices[0]]))
-        self.logger.info(f"BETA: {self.historical.beta}")
         if instrument == Instrument.FUTURE:
             price_adjustment = - (self.position // LOT_SIZE) * TICK_SIZE_IN_CENTS
             new_bid_price = bid_prices[0] + price_adjustment if bid_prices[0] != 0 else 0
