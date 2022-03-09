@@ -249,7 +249,7 @@ class AutoTrader(BaseAutoTrader):
                 log = {
                     "POSITION": self.position,
                     "FUTURES_POSITION": self.futures_position,
-                    "ACTION": f"SELL {volume}x FUTURE @{MINIMUM_BID}, ID: {next_id}"
+                    "ACTION": f"BUY {volume}x FUTURE @{MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS}, ID: {next_id}"
                 }
                 self.logger.info(f"CUSTOM LOG: {log}")
                 self.send_hedge_order(next_id, Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
