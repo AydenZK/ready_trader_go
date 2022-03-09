@@ -15,6 +15,7 @@
 #     You should have received a copy of the GNU Affero General Public
 #     License along with Ready Trader Go.  If not, see
 #     <https://www.gnu.org/licenses/>.
+from ast import Or
 import asyncio
 import itertools
 import numpy as np
@@ -28,12 +29,21 @@ LOT_SIZE = 10
 POSITION_LIMIT = 100
 TICK_SIZE_IN_CENTS = 100
 
+class OrderBook:
+    def __init__(self, sequence_number: int, ask_prices: List[int], ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]):
+        self.sequence_number = sequence_number
+        self.ask_prices = ask_prices
+        self.ask_volumes = ask_volumes
+        self.bid_prices = bid_prices
+        self.bid_volumes = bid_volumes
+
 class Historical:
     def __init__(self):
         self.historical_prices = {
             Instrument.FUTURE: [], # Future
             Instrument.ETF: []  # ETF
         }
+
 
     def update(self, instrument, price):
         self.historical_prices[instrument].append(price)
@@ -100,7 +110,6 @@ class AutoTrader(BaseAutoTrader):
         self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
         self.historical = Historical()
 
-
     def get_total_position(self):
         return self.position + self.futures_position
 
@@ -127,8 +136,10 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.future_asks:
             self.futures_position -= volume
+            self.future_asks.discard(client_order_id)
         if client_order_id in self.future_bids:
             self.futures_position += volume
+            self.future_bids.discard(client_order_id)
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
@@ -145,29 +156,29 @@ class AutoTrader(BaseAutoTrader):
         # adds to historical prices (mid price)
         self.historical.update(instrument, np.mean([bid_prices[0], ask_prices[0]]))
         if instrument == Instrument.FUTURE:
-            price_adjustment = - (self.position // LOT_SIZE) * TICK_SIZE_IN_CENTS
-            new_bid_price = bid_prices[0] + price_adjustment if bid_prices[0] != 0 else 0
-            new_ask_price = ask_prices[0] + price_adjustment if ask_prices[0] != 0 else 0
+            self.latest_futures = OrderBook(sequence_number, ask_prices,ask_volumes, bid_prices, bid_volumes)
+        else:
+            self.latest_etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
+    
+        if instrument == Instrument.ETF:
+            if self.latest_futures.bid_prices[0] > self.latest_etfs.bid_prices[0]:
+                self.logger.info(f"ARB OPP. FOUND: ETF ASK: {self.latest_etfs.ask_prices[0]}, FUT BID: {self.latest_futures.bid_prices[0]}")
+                if 0 < self.latest_etfs.ask_volumes[0] <= self.latest_futures.bid_volumes[0] and self.latest_etfs.ask_prices[0] < self.latest_futures.bid_prices[0]:
+                    trade_vol = min(100-self.position, self.latest_etfs.ask_volumes[0])
+                    self.logger.info(f"CAPITALISING: ETF ASK: {self.latest_etfs.ask_prices[0]}, FUT BID: {self.latest_futures.bid_prices[0]}, TRADE_VOL: {trade_vol} ETF_ASK_VOL: {self.latest_etfs.ask_volumes[0]}")
+                    next_id = next(self.order_ids)
+                    self.send_insert_order(next_id, Side.BUY, self.latest_etfs.ask_prices[0], trade_vol, Lifespan.FAK) # buy etf
+                    self.bids.add(next_id)
 
-            if self.bid_id != 0 and new_bid_price not in (self.bid_price, 0):
-                self.send_cancel_order(self.bid_id)
-                self.bid_id = 0
-            if self.ask_id != 0 and new_ask_price not in (self.ask_price, 0):
-                self.send_cancel_order(self.ask_id)
-                self.ask_id = 0
-
-            if self.bid_id == 0 and new_bid_price != 0 and self.position < POSITION_LIMIT:
-                self.bid_id = next(self.order_ids)
-                self.bid_price = new_bid_price
-                self.send_insert_order(self.bid_id, Side.BUY, new_bid_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
-                self.bids.add(self.bid_id)
-
-            if self.ask_id == 0 and new_ask_price != 0 and self.position > -POSITION_LIMIT:
-                self.ask_id = next(self.order_ids)
-                self.ask_price = new_ask_price
-                self.send_insert_order(self.ask_id, Side.SELL, new_ask_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
-                self.asks.add(self.ask_id)
-
+            if self.latest_etfs.bid_prices[0] > self.latest_futures.bid_prices[0]:
+                self.logger.info(f"ARB OPP. FOUND: FUT ASK: {self.latest_futures.ask_prices[0]}, ETF BID: {self.latest_etfs.bid_prices[0]}")
+                if 0 < self.latest_etfs.bid_volumes[0] <= self.latest_futures.ask_volumes[0] and self.latest_futures.ask_prices[0] < self.latest_etfs.bid_prices[0]:
+                    trade_vol = min(100+self.position, self.latest_etfs.bid_volumes[0])
+                    self.logger.info(f"CAPITALISING: FUT ASK: {self.latest_futures.ask_prices[0]}, ETF BID: {self.latest_etfs.bid_prices[0]}, TRADE_VOL: {trade_vol} ETF_BID_VOL: {self.latest_etfs.bid_volumes[0]}")
+                    next_id = next(self.order_ids)
+                    self.send_insert_order(next_id, Side.SELL, self.latest_etfs.bid_prices[0], trade_vol, Lifespan.FAK) # sell etf
+                    self.asks.add(next_id)
+                        
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
         """Called when when of your orders is filled, partially or fully.
 
@@ -179,19 +190,10 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.bids:
             self.position += volume
-            total_position = self.get_total_position()
-            if total_position >= 10:
-                order_id = next(self.order_ids)
-                self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, volume) # selling futures
-                self.future_asks.add(order_id)
+            self.send_hedge_order(next(self.order_ids), Side.SELL, MINIMUM_BID, volume) # selling futures
         elif client_order_id in self.asks:
             self.position -= volume
-            total_position = self.get_total_position()
-            if total_position <= -10:
-                order_id = next(self.order_ids)
-                self.send_hedge_order(order_id, Side.BID,
-                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # buying futures
-                self.future_bids.add(order_id)
+            self.send_hedge_order(next(self.order_ids), Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
