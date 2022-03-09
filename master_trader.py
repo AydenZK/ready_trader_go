@@ -28,7 +28,7 @@ from ready_trader_go import BaseAutoTrader, Instrument, Lifespan, MAXIMUM_ASK, M
 
 LOT_SIZE = 10
 POSITION_LIMIT = 100
-ARBITRAGE_POS_LIMIT = 85
+ARBITRAGE_POS_LIMIT = 100
 TICK_SIZE_IN_CENTS = 100
 
 class OrderBook:
@@ -206,12 +206,15 @@ class AutoTrader(BaseAutoTrader):
                         }
                         self.logger.info(f"CUSTOM LOG: {log}")
                         self.send_insert_order(next_id, Side.BUY, self.etfs.best_ask, trade_vol, Lifespan.FAK) # buy etf
+                        self.bids.discard(self.bid_id)
+                        self.send_cancel_order(self.bid_id)
+                        self.bid_id = 0
                         self.bids.add(next_id)
                         self.arbitrage_ids.add(next_id)
 
             if self.etfs.best_bid > self.futures.best_bid:
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
-                    full_trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, ARBITRAGE_POS_LIMIT-self.position, self.etfs.best_bid_vol)
+                    full_trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, ARBITRAGE_POS_LIMIT-self.futures_position, self.etfs.best_bid_vol)
                     trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
@@ -225,6 +228,9 @@ class AutoTrader(BaseAutoTrader):
                         self.logger.info(f"CUSTOM LOG: {log}")
                         self.send_insert_order(next_id, Side.SELL, self.etfs.best_bid, trade_vol, Lifespan.FAK) # sell etf
                         self.asks.add(next_id)
+                        self.asks.discard(self.ask_id)
+                        self.send_cancel_order(self.ask_id)
+                        self.ask_id = 0
                         self.arbitrage_ids.add(next_id)
                         
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
