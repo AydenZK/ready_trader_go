@@ -149,7 +149,7 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.future_asks:
             self.futures_position -= volume
-        if client_order_id in self.future_bids:
+        elif client_order_id in self.future_bids:
             self.futures_position += volume
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
@@ -193,7 +193,7 @@ class AutoTrader(BaseAutoTrader):
             self.etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
             if self.futures.best_bid > self.etfs.best_bid:
                 if 0 < self.etfs.best_ask_vol <= self.futures.best_bid_vol and self.etfs.best_ask < self.futures.best_bid:
-                    trade_vol = min(ARBITRAGE_POS_LIMIT-self.position, self.etfs.best_ask_vol)
+                    trade_vol = min(ARBITRAGE_POS_LIMIT-self.position, ARBITRAGE_POS_LIMIT+self.futures_position, self.etfs.best_ask_vol)
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
@@ -208,7 +208,7 @@ class AutoTrader(BaseAutoTrader):
 
             if self.etfs.best_bid > self.futures.best_bid:
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
-                    trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, self.etfs.best_bid_vol)
+                    trade_vol = min(ARBITRAGE_POS_LIMIT+self.position, ARBITRAGE_POS_LIMIT-self.position, self.etfs.best_bid_vol)
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
                         log = {
