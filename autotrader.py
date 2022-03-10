@@ -107,10 +107,10 @@ class AutoTrader(BaseAutoTrader):
         """Initialise a new instance of the AutoTrader class."""
         super().__init__(loop, team_name, secret)
         self.order_ids = itertools.count(1)
-        self.bids = set()
+        self.bids = {-1}
         self.future_bids = set()
-        self.asks = set()
-        self.arbitrage_hedges = set()
+        self.asks = {-1}
+        self.arbitrage_hedges = {-1}
         self.future_asks = set()
         self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
         self.historical = Historical()
