@@ -172,7 +172,7 @@ class AutoTrader(BaseAutoTrader):
                     trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
-                        if len(self.bids) == 0 or (max(self.bids) > max(self.arbitrage_hedges) > next_id) or (max(self.bids) > max(self.asks) > next_id):
+                        if self.bids == {-1} or (max(self.bids) > max(self.arbitrage_hedges) > next_id) or (max(self.bids) > max(self.asks) > next_id):
                             log = {
                                 "POSITION": self.position,
                                 "FUTURES_POSITION": self.futures_position,
@@ -192,7 +192,7 @@ class AutoTrader(BaseAutoTrader):
                     trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
-                        if len(self.asks) == 0 or (max(self.asks) > max(self.arbitrage_hedges) > next_id) or (max(self.asks) > max(self.bids) > next_id):
+                        if self.asks == {-1} or (max(self.asks) > max(self.arbitrage_hedges) > next_id) or (max(self.asks) > max(self.bids) > next_id):
                             log = {
                                 "POSITION": self.position,
                                 "FUTURES_POSITION": self.futures_position,
