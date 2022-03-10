@@ -36,7 +36,9 @@
     "PositionLimit": 100
   },
   "Traders": {
-    "TraderOne": "secret",
-    "TraderTwo": "secret"
+    "ArbitrageTrader": "secret",
+    "BidAskTrader": "secret",
+    "DefaultTrader": "secret",
+    "MasterTrader": "secret"
   }
 }
