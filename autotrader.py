@@ -110,6 +110,7 @@ class AutoTrader(BaseAutoTrader):
         self.bids = set()
         self.future_bids = set()
         self.asks = set()
+        self.arbitrage_hedges = set()
         self.future_asks = set()
         self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
         self.historical = Historical()
@@ -171,15 +172,19 @@ class AutoTrader(BaseAutoTrader):
                     trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
-                        log = {
-                            "POSITION": self.position,
-                            "MAX_VOLUME": self.etfs.best_bid_vol,
-                            "FULL_TRADE_VOL": full_trade_vol,
-                            "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}, ID: {next_id}"
-                        }
-                        self.logger.info(f"CUSTOM LOG: {log}")
-                        self.send_insert_order(next_id, Side.BUY, self.etfs.best_ask, trade_vol, Lifespan.FAK) # buy etf
-                        self.bids.add(next_id)
+                        if len(self.bids) == 0 or (max(self.bids) > max(self.arbitrage_hedges) > next_id) or (max(self.bids) > max(self.asks) > next_id):
+                            log = {
+                                "POSITION": self.position,
+                                "FUTURES_POSITION": self.futures_position,
+                                "BIDS/ASKS": (self.bids, self.asks),
+                                "MAX_VOLUME": self.etfs.best_bid_vol,
+                                "FULL_TRADE_VOL": full_trade_vol,
+                                "ACTION": f"BUY {trade_vol} ETF @{self.etfs.best_ask}, ID: {next_id}"
+                            }
+                            self.logger.info(f"CUSTOM LOG: {log}")
+                            self.send_insert_order(next_id, Side.BUY, self.etfs.best_ask, trade_vol, Lifespan.FAK) # buy etf
+                            self.hedged = False
+                            self.bids.add(next_id)
 
             if self.etfs.best_bid > self.futures.best_bid:
                 if 0 < self.etfs.best_bid_vol <= self.futures.best_ask_vol and self.futures.best_ask < self.etfs.best_bid:
@@ -187,15 +192,19 @@ class AutoTrader(BaseAutoTrader):
                     trade_vol = full_trade_vol // 2
                     if trade_vol > 0:
                         next_id = next(self.order_ids)
-                        log = {
-                            "POSITION": self.position,
-                            "MAX_VOLUME": self.etfs.best_bid_vol,
-                            "FULL_TRADE_VOL": full_trade_vol,
-                            "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}, ID: {next_id}"
-                        }
-                        self.logger.info(f"CUSTOM LOG: {log}")
-                        self.send_insert_order(next_id, Side.SELL, self.etfs.best_bid, trade_vol, Lifespan.FAK) # sell etf
-                        self.asks.add(next_id)
+                        if len(self.asks) == 0 or (max(self.asks) > max(self.arbitrage_hedges) > next_id) or (max(self.asks) > max(self.bids) > next_id):
+                            log = {
+                                "POSITION": self.position,
+                                "FUTURES_POSITION": self.futures_position,
+                                "BIDS/ASKS": (self.bids, self.asks),
+                                "MAX_VOLUME": self.etfs.best_bid_vol,
+                                "FULL_TRADE_VOL": full_trade_vol,
+                                "ACTION": f"SELL {trade_vol} ETF @{self.etfs.best_bid}, ID: {next_id}"
+                            }
+                            self.logger.info(f"CUSTOM LOG: {log}")
+                            self.send_insert_order(next_id, Side.SELL, self.etfs.best_bid, trade_vol, Lifespan.FAK) # sell etf
+                            self.hedged = False
+                            self.asks.add(next_id)
                         
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
         """Called when when of your orders is filled, partially or fully.
@@ -208,10 +217,30 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.bids:
             self.position += volume
-            self.send_hedge_order(next(self.order_ids), Side.SELL, MINIMUM_BID, volume) # selling futures
+            next_id = next(self.order_ids)
+            log = {
+                "POSITION": self.position,
+                "FUTURES_POSITION": self.futures_position,
+                "BIDS/ASKS": (self.bids, self.asks),
+                "ACTION": f"SELL {volume}x FUTURE @{MINIMUM_BID}, ID: {next_id}"
+            }
+            self.logger.info(f"CUSTOM LOG: {log}")
+            self.send_hedge_order(next_id, Side.SELL, MINIMUM_BID, volume) # selling futures
+            self.arbitrage_hedges.add(next_id)
+            self.future_asks.add(next_id)
         elif client_order_id in self.asks:
             self.position -= volume
-            self.send_hedge_order(next(self.order_ids), Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
+            next_id = next(self.order_ids)
+            log = {
+                "POSITION": self.position,
+                "FUTURES_POSITION": self.futures_position,
+                "BIDS/ASKS": (self.bids, self.asks),
+                "ACTION": f"BUY {volume}x FUTURE @{MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS}, ID: {next_id}"
+            }
+            self.logger.info(f"CUSTOM LOG: {log}")
+            self.send_hedge_order(next_id, Side.BUY, MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # selling futures
+            self.future_bids.add(next_id)
+            self.arbitrage_hedges.add(next_id)
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:

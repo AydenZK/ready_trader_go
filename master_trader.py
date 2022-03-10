@@ -168,7 +168,7 @@ class AutoTrader(BaseAutoTrader):
         if instrument == Instrument.FUTURE:
             self.futures = OrderBook(sequence_number, ask_prices,ask_volumes, bid_prices, bid_volumes)
             new_bid_price, new_ask_price = self.price(np.mean([bid_prices[0], ask_prices[0]]))
-            self.logger.info("Prices: %d, %d",new_bid_price, new_ask_price)
+            self.logger.info(f"Prices: Bid: {new_bid_price}, Ask: {new_ask_price}" )
             if self.bid_id != 0 and new_bid_price not in (self.bid_price, 0):
                 self.send_cancel_order(self.bid_id)
                 self.bid_id = 0
@@ -187,7 +187,7 @@ class AutoTrader(BaseAutoTrader):
                 self.ask_price = new_ask_price
                 self.send_insert_order(self.ask_id, Side.SELL, new_ask_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
                 self.asks.add(self.ask_id)
-            self.logger.info("Bids: %d, Asks %d", self.bids, self.asks)            
+            self.logger.info(f"Bids: {self.bids}, Asks {self.asks}")            
     
         elif instrument == Instrument.ETF:
             self.etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
@@ -281,7 +281,7 @@ class AutoTrader(BaseAutoTrader):
                     self.send_hedge_order(order_id, Side.BID,
                                     MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, 10 - total_position) # buying futures
                     self.future_bids.add(order_id)
-            self.logger.info("Position: %d", self.position)
+            self.logger.info(f"Position: {self.position}")
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
