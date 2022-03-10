@@ -39,6 +39,9 @@
     "ArbitrageTrader": "secret",
     "BidAskTrader": "secret",
     "DefaultTrader": "secret",
+    "DefaultTrader2": "secret",
+    "DefaultTrader3": "secret",
+    "DefaultTrader4": "secret",
     "MasterTrader": "secret"
   }
 }
