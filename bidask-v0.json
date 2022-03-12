@@ -7,6 +7,6 @@
         "Type": "mmap",
         "Name": "info.dat"
     },
-    "TeamName": "DefaultTrader3",
+    "TeamName": "BidAsk-v0",
     "Secret": "secret"
 }
