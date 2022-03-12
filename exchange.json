@@ -36,6 +36,7 @@
     "PositionLimit": 100
   },
   "Traders": {
+    "Arb-v1": "secret",
     "Arb-v2": "secret",
     "BidAsk-v0": "secret",
     "Default1": "secret",
