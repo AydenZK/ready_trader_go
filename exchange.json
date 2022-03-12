@@ -1,11 +1,11 @@
 {
   "Engine": {
-    "MarketDataFile": "data/market_data.csv",
+    "MarketDataFile": "data/market_data3.csv",
     "MarketEventInterval": 0.05,
     "MarketOpenDelay": 5.0,
     "MatchEventsFile": "match_events.csv",
     "ScoreBoardFile": "score_board.csv",
-    "Speed": 1.0,
+    "Speed": 10.0,
     "TickInterval": 0.25
   },
   "Execution": {
@@ -36,12 +36,12 @@
     "PositionLimit": 100
   },
   "Traders": {
-    "ArbitrageTrader": "secret",
-    "BidAskTrader": "secret",
-    "DefaultTrader": "secret",
-    "DefaultTrader2": "secret",
-    "DefaultTrader3": "secret",
-    "DefaultTrader4": "secret",
-    "MasterTrader": "secret"
+    "Arb-v2": "secret",
+    "BidAsk-v0": "secret",
+    "Default1": "secret",
+    "Default2": "secret",
+    "Default3": "secret",
+    "Default4": "secret",
+    "Master-v0": "secret"
   }
 }
