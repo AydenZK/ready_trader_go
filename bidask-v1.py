@@ -263,12 +263,12 @@ class AutoTrader(BaseAutoTrader):
         else:
             sell_prob=0.45+self.position*0.0045
             buy_prob=0.45-self.position*0.0005
-        if buy_prob==0:
-            bid=MINIMUM_BID
+        if self.position==100:
+            bid=0
         else:
-            bid=max(int((mid+self.historical.move*st.norm.ppf(buy_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS),MINIMUM_BID)
-        if sell_prob==0:
-            ask=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS
+            bid=max(int((mid+self.historical.move*st.norm.ppf(buy_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS),0)
+        if self.position==-100:
+            ask=0
         else:
-            ask=min(int((mid+self.historical.move*st.norm.ppf(1-sell_prob))),MAXIMUM_ASK)//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS
+            ask=int((mid+self.historical.move*st.norm.ppf(1-sell_prob)))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS
         return self.one_tick_diff(bid,ask)
