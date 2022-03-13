@@ -198,7 +198,7 @@ class AutoTrader(BaseAutoTrader):
                 order_id = next(self.order_ids)
                 self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, total_position-10) # selling futures
                 self.future_asks.add(order_id)
-                self.futures_position -= volume
+                self.futures_position -= (total_position-10)
         elif client_order_id in self.asks.keys():
             self.position -= volume
             self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume))
@@ -208,7 +208,7 @@ class AutoTrader(BaseAutoTrader):
                 self.send_hedge_order(order_id, Side.BID,
                                   MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, -total_position-10) # buying futures
                 self.future_bids.add(order_id)
-                self.futures_position += volume
+                self.futures_position += (-total_position-10)
         self.logger.info(f"Position: {self.position}")
         
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
