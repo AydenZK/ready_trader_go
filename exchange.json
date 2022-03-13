@@ -5,7 +5,7 @@
     "MarketOpenDelay": 5.0,
     "MatchEventsFile": "match_events.csv",
     "ScoreBoardFile": "score_board.csv",
-    "Speed": 10.0,
+    "Speed": 2.0,
     "TickInterval": 0.25
   },
   "Execution": {
@@ -38,11 +38,11 @@
   "Traders": {
     "Arb-v1": "secret",
     "Arb-v2": "secret",
-    "BidAsk-v0": "secret",
+    "Default4": "secret",
     "Default1": "secret",
     "Default2": "secret",
     "Default3": "secret",
-    "Default4": "secret",
+    "BidAsk-v1": "secret",
     "Master-v0": "secret"
   }
 }
