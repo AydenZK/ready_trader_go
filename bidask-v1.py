@@ -140,10 +140,10 @@ class AutoTrader(BaseAutoTrader):
         self.logger.info("received hedge filled for order %d with average price %d and volume %d", client_order_id,
                          price, volume)
         if client_order_id in self.future_asks:
-            self.futures_position -= volume
+            pass
         if client_order_id in self.future_bids:
-            self.futures_position += volume
-
+            pass
+            
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
         """Called periodically to report the status of an order book.
@@ -194,19 +194,21 @@ class AutoTrader(BaseAutoTrader):
             self.position += volume
             self.bids[client_order_id] = Order(id=client_order_id, price=price, vol=(self.bids[client_order_id].vol-volume))
             total_position = self.get_total_position()
-            if total_position >= 10:
+            if total_position > 10:
                 order_id = next(self.order_ids)
-                self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, volume) # selling futures
+                self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, total_position-10) # selling futures
                 self.future_asks.add(order_id)
+                self.futures_position -= volume
         elif client_order_id in self.asks.keys():
             self.position -= volume
             self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume))
             total_position = self.get_total_position()
-            if total_position <= -10:
+            if total_position < -10:
                 order_id = next(self.order_ids)
                 self.send_hedge_order(order_id, Side.BID,
-                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume) # buying futures
+                                  MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, -total_position-10) # buying futures
                 self.future_bids.add(order_id)
+                self.futures_position += volume
         self.logger.info(f"Position: {self.position}")
         
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
