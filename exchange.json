@@ -43,6 +43,6 @@
     "Default2": "secret",
     "Default3": "secret",
     "BidAsk-v1": "secret",
-    "Master-v0": "secret"
+    "Master-v1": "secret"
   }
 }
