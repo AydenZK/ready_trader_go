@@ -17,6 +17,7 @@
 #     <https://www.gnu.org/licenses/>.
 import asyncio
 import itertools
+import numpy as np
 
 from typing import List
 
@@ -61,8 +62,8 @@ class AutoTrader(BaseAutoTrader):
         the number of lots filled at that price.
         If the order was unsuccessful, both the price and volume will be zero.
         """
-        self.logger.info("received hedge filled for order %d with average price %d and volume %d", client_order_id,
-                         price, volume)
+        # self.logger.info("received hedge filled for order %d with average price %d and volume %d", client_order_id,
+        #                  price, volume)
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
@@ -72,8 +73,12 @@ class AutoTrader(BaseAutoTrader):
         prices are reported along with the volume available at each of those
         price levels.
         """
-        self.logger.info("received order book for instrument %d with sequence number %d", instrument,
-                         sequence_number)
+        # self.logger.info("received order book for instrument %d with sequence number %d", instrument,
+        #                  sequence_number)
+        mid_price = np.mean([bid_prices[0], ask_prices[0]])
+        time = self.event_loop.time()
+        instr = "etf" if instrument == 1 else 'future'
+        self.logger.info(f"{time},{mid_price},{instr}")
         if instrument == Instrument.FUTURE:
             price_adjustment = - (self.position // LOT_SIZE) * TICK_SIZE_IN_CENTS
             new_bid_price = bid_prices[0] + price_adjustment if bid_prices[0] != 0 else 0
@@ -104,8 +109,8 @@ class AutoTrader(BaseAutoTrader):
         which may be better than the order's limit price. The volume is
         the number of lots filled at that price.
         """
-        self.logger.info("received order filled for order %d with price %d and volume %d", client_order_id,
-                         price, volume)
+        # self.logger.info("received order filled for order %d with price %d and volume %d", client_order_id,
+        #                  price, volume)
         if client_order_id in self.bids:
             self.position += volume
             self.send_hedge_order(next(self.order_ids), Side.ASK, MINIMUM_BID, volume)
@@ -123,8 +128,8 @@ class AutoTrader(BaseAutoTrader):
         you receive fees for being a market maker, so fees can be negative.
         If an order is cancelled its remaining volume will be zero.
         """
-        self.logger.info("received order status for order %d with fill volume %d remaining %d and fees %d",
-                         client_order_id, fill_volume, remaining_volume, fees)
+        # self.logger.info("received order status for order %d with fill volume %d remaining %d and fees %d",
+        #                  client_order_id, fill_volume, remaining_volume, fees)
         if remaining_volume == 0:
             if client_order_id == self.bid_id:
                 self.bid_id = 0
@@ -144,5 +149,5 @@ class AutoTrader(BaseAutoTrader):
         If there are less than five prices on a side, then zeros will appear at
         the end of both the prices and volumes arrays.
         """
-        self.logger.info("received trade ticks for instrument %d with sequence number %d", instrument,
-                         sequence_number)
+        # self.logger.info("received trade ticks for instrument %d with sequence number %d", instrument,
+        #                  sequence_number)
