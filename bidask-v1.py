@@ -114,8 +114,8 @@ class AutoTrader(BaseAutoTrader):
     def potential_position(self):
         return PotentialVolume(max = self.position + sum([order.vol for order in self.bids.values()]), min = self.position - sum([order.vol for order in self.asks.values()]))
 
-
-    def get_total_position(self):
+    @property
+    def total_position(self):
         return self.position + self.futures_position
 
     def on_error_message(self, client_order_id: int, error_message: bytes) -> None:
@@ -193,7 +193,7 @@ class AutoTrader(BaseAutoTrader):
         if client_order_id in self.bids.keys():
             self.position += volume
             self.bids[client_order_id] = Order(id=client_order_id, price=price, vol=(self.bids[client_order_id].vol-volume))
-            total_position = self.get_total_position()
+            total_position = self.total_position
             if total_position > 10:
                 order_id = next(self.order_ids)
                 self.send_hedge_order(order_id, Side.ASK, MINIMUM_BID, total_position-10) # selling futures
@@ -202,7 +202,7 @@ class AutoTrader(BaseAutoTrader):
         elif client_order_id in self.asks.keys():
             self.position -= volume
             self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume))
-            total_position = self.get_total_position()
+            total_position = self.total_position
             if total_position < -10:
                 order_id = next(self.order_ids)
                 self.send_hedge_order(order_id, Side.BID,
