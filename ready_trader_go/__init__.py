@@ -19,5 +19,5 @@ __all__ = ["BaseAutoTrader", "Instrument", "Lifespan", "MAXIMUM_ASK", "MINIMUM_B
 
 from .application import Application
 from .base_auto_trader import BaseAutoTrader
-from .order_book import MAXIMUM_ASK, MINIMUM_BID
+from .order_book import MAXIMUM_ASK, MINIMUM_BID, OrderBook
 from .types import Instrument, Lifespan, Side

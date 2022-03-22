@@ -17,8 +17,9 @@
 #     <https://www.gnu.org/licenses/>.
 from bisect import bisect, insort_left
 import collections
+import queue
 
-from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple, NamedTuple
 
 from .types import Instrument, Lifespan, Side
 
@@ -27,6 +28,7 @@ MINIMUM_BID = 0
 MAXIMUM_ASK = 2 ** 32 - 1
 TOP_LEVEL_COUNT = 5
 
+Message = NamedTuple('Message', [('type', str), ('vals', dict)])
 
 class IOrderListener(object):
     def on_order_amended(self, now: float, order, volume_removed: int) -> None:
@@ -72,7 +74,6 @@ class Order(object):
             "total_fees=%d}"
         return s % args
 
-
 class OrderBook(object):
     """A collection of orders arranged by the price-time priority principle."""
 
@@ -89,6 +90,7 @@ class OrderBook(object):
         self.__last_traded_price: Optional[int] = None
         self.__levels: Dict[int, Deque[Order]] = {}
         self.__total_volumes: Dict[int, int] = {}
+        self.message_queue = queue.Queue(1024)
 
         # Signals
         self.trade_occurred: List[Callable[[Any], None]] = list()
@@ -123,6 +125,17 @@ class OrderBook(object):
             order.remaining_volume = 0
             if order.listener:
                 order.listener.on_order_cancelled(now, order, remaining)
+            self.message_queue.put(
+                Message(
+                    type='status', 
+                    vals={
+                        "client_order_id": order.client_order_id, 
+                        "fill_volume": order.volume - order.remaining_volume,
+                        "remaining_volume": order.remaining_volume,
+                        "fees": order.total_fees
+                    }
+                )
+            )
 
     def insert(self, now: float, order: Order) -> None:
         """Insert a new order into this order book."""
@@ -137,6 +150,17 @@ class OrderBook(object):
                 order.remaining_volume = 0
                 if order.listener:
                     order.listener.on_order_cancelled(now, order, remaining)
+                self.message_queue.put(
+                    Message(
+                        type='status', 
+                        vals={
+                            "client_order_id": order.client_order_id, 
+                            "fill_volume": order.volume - order.remaining_volume,
+                            "remaining_volume": order.remaining_volume,
+                            "fees": order.total_fees
+                        }
+                    )
+                )
             else:
                 self.place(now, order)
 
@@ -250,6 +274,27 @@ class OrderBook(object):
             passive.total_fees += fee
             if passive.listener:
                 passive.listener.on_order_filled(now, passive, best_price, volume, fee)
+            self.message_queue.put(
+                Message(
+                    type='filled', 
+                    vals={
+                        "client_order_id": passive.client_order_id, 
+                        "price": best_price,
+                        "volume": volume
+                    }
+                )
+            ) 
+            self.message_queue.put(
+                Message(
+                    type='status', 
+                    vals={
+                        "client_order_id": passive.client_order_id, 
+                        "fill_volume": passive.volume - passive.remaining_volume,
+                        "remaining_volume": passive.remaining_volume,
+                        "fees": passive.total_fees
+                    }
+                )
+            )
 
         self.__total_volumes[best_price] = total_volume
         traded_volume_at_this_level: int = order.remaining_volume - remaining
@@ -264,6 +309,27 @@ class OrderBook(object):
         order.total_fees += fee
         if order.listener:
             order.listener.on_order_filled(now, order, best_price, traded_volume_at_this_level, fee)
+        self.message_queue.put(
+            Message(
+                type='filled', 
+                vals={
+                        "client_order_id": order.client_order_id, 
+                        "price": best_price,
+                        "volume": traded_volume_at_this_level
+                }
+            )
+        ) 
+        self.message_queue.put(
+            Message(
+                type='status', 
+                vals={
+                    "client_order_id": order.client_order_id, 
+                    "fill_volume": traded_volume_at_this_level,
+                    "remaining_volume": order.volume - traded_volume_at_this_level,
+                    "fees": fee
+                }
+            )
+        )
 
         self.__last_traded_price = best_price
         for callback in self.trade_occurred:
