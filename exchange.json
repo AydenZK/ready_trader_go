@@ -1,6 +1,6 @@
 {
   "Engine": {
-    "MarketDataFile": "data/market_data.csv",
+    "MarketDataFile": "data/market_data3.csv",
     "MarketEventInterval": 0.05,
     "MarketOpenDelay": 5.0,
     "MatchEventsFile": "match_events.csv",
@@ -36,7 +36,13 @@
     "PositionLimit": 100
   },
   "Traders": {
-    "TraderOne": "secret",
-    "TraderTwo": "secret"
+    "Arb-v1": "secret",
+    "Arb-v2": "secret",
+    "Default4": "secret",
+    "Default1": "secret",
+    "Default2": "secret",
+    "Default3": "secret",
+    "BidAsk-v1": "secret",
+    "Master-v1": "secret"
   }
 }
