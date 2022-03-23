@@ -1,2 +1,2 @@
-deatils,pct_error,abs_error
-BidAsk-v1,md3_x10 vs Arb-v1|BidAsk-v1|Master-v1,444.79 %,862900.0
+trader,deatils,exp_prof,true_prof,pct_error,abs_error
+BidAsk-v1,md3_x3_4min vs Arb-v2|Default1|Default2|Master-v1|BidAsk-v1,320800.0,730700.0,-56.1 %,409900.0
