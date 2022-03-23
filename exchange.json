@@ -44,6 +44,9 @@
     "Default3": "secret",
     "BidAsk-v1": "secret",
     "BidAsk-v2": "secret",
+    "BidAsk-v3": "secret",
+    "BidAsk-v4": "secret",
+    "BidAsk-v5": "secret",
     "Master-v1": "secret",
     "Master-v2": "secret"
   }
