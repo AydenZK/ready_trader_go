@@ -17,6 +17,7 @@
 #     <https://www.gnu.org/licenses/>.
 import asyncio
 import itertools
+from turtle import position
 import numpy as np
 import scipy.stats as st
 
@@ -47,47 +48,7 @@ class Historical:
         if instrument==Instrument.ETF and len(self.historical_prices[instrument])>=2:
             self.total+=(self.historical_prices[instrument][-1]-self.historical_prices[instrument][-2])**2
             self.n+=1
-            self.move=(self.total/self.n)**(1/2)
-    @property
-    def min_time(self):
-        return min(
-            len(self.historical_prices[Instrument.FUTURE]), 
-            len(self.historical_prices[Instrument.ETF]))
-
-    def min_len_to_execute(self, result, length=10, safe_result=0):
-        if self.min_time >= length:
-            return result
-        return safe_result
-
-    @property
-    def history_future(self):
-        return self.historical_prices[Instrument.FUTURE][:self.min_time]
-
-    @property
-    def history_etf(self):
-        return self.historical_prices[Instrument.ETF][:self.min_time]
-
-    @property
-    def std_etf(self):
-        return self.min_len_to_execute(np.std(self.history_etf), safe_result=1)
-
-    @property
-    def std_future(self):
-        return self.min_len_to_execute(np.std(self.history_future), safe_result=1)
-
-    @property
-    def corr(self):
-        return self.min_len_to_execute(np.corrcoef(self.history_etf, self.history_future)[0][1])
-    
-    @property
-    def cov(self):
-        return self.min_len_to_execute(self.corr * self.std_etf * self.std_future)
-
-    @property
-    def beta(self):
-        """beta of stock against future"""
-        return self.min_len_to_execute(self.cov / (self.std_future**2))
-    
+            self.move=(self.total/self.n)**(1/2)    
 
 class AutoTrader(BaseAutoTrader):
     """Example Auto-trader.
@@ -156,30 +117,37 @@ class AutoTrader(BaseAutoTrader):
         self.logger.info("received order book for instrument %d with sequence number %d", instrument,
                          sequence_number)
         # adds to historical prices (mid price)
-        self.historical.update(instrument, np.mean([bid_prices[0], ask_prices[0]]))
+        theo: float = self.get_theo(bid_prices, bid_volumes, ask_prices, ask_volumes)
+        self.historical.update(instrument, theo)
+        
         if instrument == Instrument.FUTURE:
-            new_bid_price, new_ask_price = self.price(np.mean([bid_prices[0], ask_prices[0]]))
-            self.logger.info(f"Prices: Bid: {new_bid_price}, Ask: {new_ask_price}" )
-            if self.bid_id != 0 and new_bid_price not in (self.bid_price, 0):
+            edges: tuple[float, float] = self.get_edges(theo, position=self.position)
+            volumes: tuple[int, int] = self.get_volumes(position=self.position)
+            bid_order, ask_order = self.get_orders(theo, edges, volumes)
+
+            self.logger.info(f"Calculated Bid/Ask: Bid: {bid_order}, Ask: {ask_order}" )
+            
+            if self.bid_id != 0 and bid_order and bid_order.price not in (self.bid_price, 0):
                 self.send_cancel_order(self.bid_id)
                 self.logger.info("Cancel sent for order %d", self.bid_id)
                 self.bid_id = 0
-            if self.ask_id != 0 and new_ask_price not in (self.ask_price, 0):
+            if self.ask_id != 0 and ask_order and ask_order.price not in (self.ask_price, 0):
                 self.send_cancel_order(self.ask_id)
                 self.logger.info("Cancel sent for order %d", self.ask_id)
                 self.ask_id = 0
 
-            if self.bid_id == 0 and new_bid_price != 0 and self.potential_position.max+LOT_SIZE <= POSITION_LIMIT:
+            if bid_order and self.bid_id == 0 and bid_order.price != 0 and self.potential_position.max+bid_order.vol <= POSITION_LIMIT:
                 self.bid_id = next(self.order_ids)
-                self.bid_price = new_bid_price
-                self.send_insert_order(self.bid_id, Side.BUY, new_bid_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
-                self.bids[self.bid_id] = Order(price=new_bid_price, vol=LOT_SIZE, id=self.bid_id)
+                self.bid_price = bid_order.price
+                self.send_insert_order(self.bid_id, Side.BUY, bid_order.price, bid_order.vol, Lifespan.GOOD_FOR_DAY)
+                self.bids[self.bid_id] = Order(price=bid_order.price, vol=bid_order.vol, id=self.bid_id)
 
-            if self.ask_id == 0 and new_ask_price != 0 and self.potential_position.min-LOT_SIZE >= -POSITION_LIMIT:
+            if ask_order and self.ask_id == 0 and ask_order.price != 0 and self.potential_position.min-ask_order.vol >= -POSITION_LIMIT:
                 self.ask_id = next(self.order_ids)
-                self.ask_price = new_ask_price
-                self.send_insert_order(self.ask_id, Side.SELL, new_ask_price, LOT_SIZE, Lifespan.GOOD_FOR_DAY)
-                self.asks[self.ask_id] = Order(price=new_ask_price, vol=LOT_SIZE, id=self.ask_id)
+                self.ask_price = ask_order.price
+                self.send_insert_order(self.ask_id, Side.SELL, ask_order.price, ask_order.vol, Lifespan.GOOD_FOR_DAY)
+                self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id)
+
             self.logger.info(f"Bids: {self.bids}, Asks {self.asks}")
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
         """Called when when of your orders is filled, partially or fully.
@@ -249,26 +217,52 @@ class AutoTrader(BaseAutoTrader):
         self.logger.info("received trade ticks for instrument %d with sequence number %d", instrument,
                          sequence_number)
 
+    def get_theo(self, bid_prices, bid_volumes, ask_prices, ask_volumes) -> float:
+        """Get theoretical price"""
+        return np.mean([bid_prices[0], ask_prices[0]])
+
+    def get_edges(self, theo, position) -> tuple[int, int]:
+        """Return bid and ask edge from theo"""
+        if position>=0:
+            sell_prob=0.45+position*0.0005
+            buy_prob=0.45-position*0.0045
+
+        else:
+            sell_prob=0.45+position*0.0045
+            buy_prob=0.45-position*0.0005
+
+        bid_edge = self.historical.move*st.norm.ppf(buy_prob)
+        ask_edge = self.historical.move*st.norm.ppf(1-sell_prob)
+
+        return bid_edge, ask_edge
+
+    def get_volumes(self, position) -> tuple[int, int]:
+        """Return bid and ask volumes"""
+        return (LOT_SIZE, LOT_SIZE)
+
     def one_tick_diff(self, x, y):
-        if x == y:
-            return x-1*TICK_SIZE_IN_CENTS, y+1*TICK_SIZE_IN_CENTS
+        if x and y and x.price == y.price:
+            return (
+                Order(x.price-1*TICK_SIZE_IN_CENTS, x.vol, x.id),
+                Order(y.price+1*TICK_SIZE_IN_CENTS, y.vol, y.id)
+            )
         return x,y 
 
-    def price(self, mid):
+    def get_orders(self, theo, edges, volumes) -> tuple[Order, Order]:
+        bid = None
+        ask = None
         if self.historical.move==0:
-            return 0, 0
-        if self.position>=0:
-            sell_prob=0.45+self.position*0.0005
-            buy_prob=0.45-self.position*0.0045
-        else:
-            sell_prob=0.45+self.position*0.0045
-            buy_prob=0.45-self.position*0.0005
-        if self.position==100:
-            bid=0
-        else:
-            bid=max(int((mid+self.historical.move*st.norm.ppf(buy_prob))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS),0)
-        if self.position==-100:
-            ask=0
-        else:
-            ask=int((mid+self.historical.move*st.norm.ppf(1-sell_prob)))//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS
-        return self.one_tick_diff(bid,ask)
+            return (None, None)
+
+        if self.position != 100:
+            bid_price = int(round((theo + edges[0])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
+            bid_vol = volumes[0]
+            bid = Order(bid_price, bid_vol, -1)
+        
+        if self.position != -100:
+            ask_price = int(round((theo + edges[1])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
+            ask_vol = volumes[1]
+            ask = Order(ask_price, ask_vol, -1)
+
+        return self.one_tick_diff(bid, ask)
+
