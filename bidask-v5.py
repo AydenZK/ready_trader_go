@@ -223,9 +223,8 @@ class AutoTrader(BaseAutoTrader):
     def get_theo(self, bid_prices, bid_volumes, ask_prices, ask_volumes) -> float:
         """Get theoretical price"""
         if bid_volumes[0]+ask_volumes[0]>0:
-            inc=ask_prices[0]-bid_prices[0]
-            num=sum([(bid_prices[i]*bid_volumes[i])*np.exp(-(bid_prices[0]-bid_prices[i])/inc) for i in range(len(bid_volumes))]+[(ask_prices[i]*ask_volumes[i])*np.exp(-(ask_prices[i]-ask_prices[0])/inc) for i in range(len(bid_volumes))])
-            denom=sum([(bid_volumes[i])*np.exp(-(bid_prices[0]-bid_prices[i])/inc) for i in range(len(bid_volumes))]+[(ask_volumes[i])*np.exp(-(ask_prices[i]-ask_prices[0])/inc) for i in range(len(bid_volumes))])
+            num=sum([(bid_prices[i]*bid_volumes[i]+ask_prices[i]*ask_volumes[i])*np.exp(-i) for i in range(len(bid_volumes))])
+            denom=sum([(bid_volumes[i]+ask_volumes[i])*np.exp(-i) for i in range(len(bid_volumes))])
             return (num/denom)
         else:
             return np.mean([bid_prices[0],ask_prices[0]])
