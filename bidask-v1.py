@@ -147,7 +147,7 @@ class AutoTrader(BaseAutoTrader):
                 self.ask_id = next(self.order_ids)
                 self.ask_price = ask_order.price
                 self.send_insert_order(self.ask_id, Side.SELL, ask_order.price, ask_order.vol, Lifespan.GOOD_FOR_DAY)
-                self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id, edge=bid_order.edge)
+                self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id, edge=ask_order.edge)
 
             self.logger.info(f"Bids: {self.bids}, Asks {self.asks}")
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
