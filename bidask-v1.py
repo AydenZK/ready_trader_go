@@ -30,7 +30,7 @@ LOT_SIZE = 10
 POSITION_LIMIT = 100
 TICK_SIZE_IN_CENTS = 100
 
-Order = NamedTuple('Order', [('price', int), ('vol', int), ('id', int)])
+Order = NamedTuple('Order', [('price', int), ('vol', int), ('id', int), ('edge', float)])
 PotentialVolume = NamedTuple('PotentialVolume', [('max', int), ('min', int)])
 
 class Historical:
@@ -70,6 +70,7 @@ class AutoTrader(BaseAutoTrader):
         self.future_asks = set()
         self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
         self.historical = Historical()
+        self.dollar_edge = 0
 
     @property
     def potential_position(self):
@@ -140,13 +141,13 @@ class AutoTrader(BaseAutoTrader):
                 self.bid_id = next(self.order_ids)
                 self.bid_price = bid_order.price
                 self.send_insert_order(self.bid_id, Side.BUY, bid_order.price, bid_order.vol, Lifespan.GOOD_FOR_DAY)
-                self.bids[self.bid_id] = Order(price=bid_order.price, vol=bid_order.vol, id=self.bid_id)
+                self.bids[self.bid_id] = Order(price=bid_order.price, vol=bid_order.vol, id=self.bid_id, edge=bid_order.edge)
 
             if ask_order and self.ask_id == 0 and ask_order.price != 0 and self.potential_position.min-ask_order.vol >= -POSITION_LIMIT:
                 self.ask_id = next(self.order_ids)
                 self.ask_price = ask_order.price
                 self.send_insert_order(self.ask_id, Side.SELL, ask_order.price, ask_order.vol, Lifespan.GOOD_FOR_DAY)
-                self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id)
+                self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id, edge=bid_order.edge)
 
             self.logger.info(f"Bids: {self.bids}, Asks {self.asks}")
     def on_order_filled_message(self, client_order_id: int, price: int, volume: int) -> None:
@@ -160,7 +161,8 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
         if client_order_id in self.bids.keys():
             self.position += volume
-            self.bids[client_order_id] = Order(id=client_order_id, price=price, vol=(self.bids[client_order_id].vol-volume))
+            self.bids[client_order_id] = Order(id=client_order_id, price=price, vol=(self.bids[client_order_id].vol-volume), edge=self.bids[client_order_id].edge)
+            self.dollar_edge += volume * self.bids[client_order_id].edge
             total_position = self.total_position
             if total_position > 10:
                 order_id = next(self.order_ids)
@@ -169,7 +171,8 @@ class AutoTrader(BaseAutoTrader):
                 self.futures_position -= (total_position-10)
         elif client_order_id in self.asks.keys():
             self.position -= volume
-            self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume))
+            self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume), edge=self.asks[client_order_id].edge)
+            self.dollar_edge += volume * self.asks[client_order_id].edge
             total_position = self.total_position
             if total_position < -10:
                 order_id = next(self.order_ids)
@@ -177,7 +180,7 @@ class AutoTrader(BaseAutoTrader):
                                   MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, -total_position-10) # buying futures
                 self.future_bids.add(order_id)
                 self.futures_position += (-total_position-10)
-        self.logger.info(f"Position: {self.position}")
+        self.logger.info(f"Position: {self.position}, TOTAL_EDGE: {self.dollar_edge}")
         
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
@@ -243,8 +246,8 @@ class AutoTrader(BaseAutoTrader):
     def one_tick_diff(self, x, y):
         if x and y and x.price == y.price:
             return (
-                Order(x.price-1*TICK_SIZE_IN_CENTS, x.vol, x.id),
-                Order(y.price+1*TICK_SIZE_IN_CENTS, y.vol, y.id)
+                Order(x.price-TICK_SIZE_IN_CENTS, x.vol, x.id, x.edge+TICK_SIZE_IN_CENTS),
+                Order(y.price+TICK_SIZE_IN_CENTS, y.vol, y.id, y.edge+TICK_SIZE_IN_CENTS)
             )
         return x,y 
 
@@ -257,12 +260,12 @@ class AutoTrader(BaseAutoTrader):
         if self.position != 100:
             bid_price = int(round((theo + edges[0])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
             bid_vol = volumes[0]
-            bid = Order(bid_price, bid_vol, -1)
+            bid = Order(bid_price, bid_vol, -1, abs(theo-bid_price))
         
         if self.position != -100:
             ask_price = int(round((theo + edges[1])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
             ask_vol = volumes[1]
-            ask = Order(ask_price, ask_vol, -1)
+            ask = Order(ask_price, ask_vol, -1, abs(theo-ask_price))
 
         return self.one_tick_diff(bid, ask)
 
