@@ -9,7 +9,7 @@ def evaluate_theo(trader_log, score_board, trader, details=''):
 
         df = pd.read_csv(score_board)
         res = df[df['Team']==trader].tail(1)
-        trade_profit = res['ProfitOrLoss'] - (res['EtfPosition'] * res['EtfPrice'] + res['FuturePosition'] * res['FuturePrice']) + res['TotalFees']
+        trade_profit = res['ProfitOrLoss'] + res['TotalFees']
         true_edge = trade_profit.values[0]
 
         pct_error = f"{round((-true_edge + total_edge) / true_edge * 10000) / 100} %"
