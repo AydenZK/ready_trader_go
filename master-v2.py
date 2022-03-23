@@ -24,7 +24,6 @@ from typing import List, NamedTuple
 
 from ready_trader_go import BaseAutoTrader, Instrument, Lifespan, MAXIMUM_ASK, MINIMUM_BID, Side
 
-
 LOT_SIZE = 10
 POSITION_LIMIT = 100
 ARB_LIMIT = 95
@@ -65,19 +64,19 @@ class OrderBook:
 
 class Historical:
     def __init__(self):
-        self.historical_prices = {
-            Instrument.FUTURE: [], # Future
-            Instrument.ETF: []  # ETF
-        }
+        self.l2_etf = []
         self.move=0
         self.total=0
         self.n=0
         
-    def update(self, instrument, price):
-        self.historical_prices[instrument].append(price)
-        if instrument==Instrument.ETF and len(self.historical_prices[instrument])>=2:
+    def update(self, price):
+        if len(self.l2_etf) == 2:
+            self.l2_etf.pop(0)
+        self.l2_etf.append(price)
+
+        if len(self.historical_prices[self.l2_etf])>=2:
             self.n+=1
-            self.total+=(self.historical_prices[instrument][-1]-self.historical_prices[instrument][-2])**2
+            self.total+=(self.l2_etf[-1]-self.l2_etf[-2])**2
             self.move=(self.total/self.n)**(1/2)
 
 class AutoTrader(BaseAutoTrader):
@@ -113,25 +112,15 @@ class AutoTrader(BaseAutoTrader):
 
     @property
     def potential_position(self):
-        return PotentialVolume(max = self.position + sum([order.vol for order in self.bids.values()]), min = self.position - sum([order.vol for order in self.asks.values()]))
+        return PotentialVolume(
+            max = self.position + sum([order.vol for order in self.bids.values()]), 
+            min = self.position - sum([order.vol for order in self.asks.values()]))
 
     @property
     def potential_fut_position(self):
         return PotentialVolume(
             max = self.futures_position + sum([order.vol for order in self.future_bids.values()]), 
             min = self.futures_position - sum([order.vol for order in self.future_asks.values()]))
-
-    def custom_log(self, additional = {}):
-        default_log = {
-            "POSITION": self.position,
-            "POTENTIAL_POSITION": self.potential_position,
-            "FUTURES_POSITION": self.futures_position,
-            "FUTURES_POTENTIAL_POSITION": self.potential_fut_position,
-            "BIDS/ASKS": (self.bids, self.asks),
-            "FUTURE BIDS/ASKS": (self.future_bids, self.future_asks)
-        }
-        default_log.update(additional)
-        self.logger.info(f"CUSTOM LOG: {default_log}")
 
     def on_error_message(self, client_order_id: int, error_message: bytes) -> None:
         """Called when the exchange detects an error.
@@ -156,18 +145,13 @@ class AutoTrader(BaseAutoTrader):
                          price, volume)
 
         if not self.safe_to_trade and self.future_asks.get(client_order_id, EMPTY_ORDER).typ == 'safe_hedge' or self.future_bids.get(client_order_id, EMPTY_ORDER).typ == 'safe_hedge':
-                self.safe_to_trade = True
+            self.safe_to_trade = True
         
         if client_order_id in self.future_asks.keys(): # Bought ETF, Sold Future
-            if client_order_id in self.hedges.keys() and price <= self.hedges[client_order_id].ETF.price:
-                self.logger.info(f"UNFAVOURABLE HEDGE: BOUGHT ETF AT {self.hedges[client_order_id].ETF.price}, SOLD FUTURE AT {price}")
-                self.hedges.pop(client_order_id)
             self.futures_position -= volume
             self.future_asks.pop(client_order_id) 
+
         elif client_order_id in self.future_bids.keys(): # Sold ETF, Bought Future
-            if client_order_id in self.hedges.keys() and price >= self.hedges[client_order_id].ETF.price:
-                self.logger.info(f"UNFAVOURABLE HEDGE: SOLD ETF AT {self.hedges[client_order_id].ETF.price}, BOUGHT FUTURE AT {price}")
-                self.hedges.pop(client_order_id)
             self.future_bids.pop(client_order_id) 
             self.futures_position += volume
         
@@ -183,21 +167,23 @@ class AutoTrader(BaseAutoTrader):
         """
         self.logger.info("received order book for instrument %d with sequence number %d", instrument,
                          sequence_number)
+
         # adds to historical prices (mid price)
-        theo: float = self.get_theo(bid_prices, bid_volumes, ask_prices, ask_volumes)
-        self.historical.update(instrument, theo)
-        
+        theo = self.get_theo(bid_prices, bid_volumes, ask_prices, ask_volumes)
+                
         if instrument == Instrument.FUTURE and self.safe_to_trade: ## mm order:
             edges = self.get_edges(theo, position=self.position)
             volumes = self.get_volumes(position=self.position)
             bid_order, ask_order = self.get_orders(theo, edges, volumes)
 
             self.logger.info(f"Calculated Bid/Ask: Bid: {bid_order}, Ask: {ask_order}" )
+            
             order_type = 'mm'
             if self.bid_id != 0 and bid_order and bid_order.price not in (self.bid_price, 0):
                 self.send_cancel_order(self.bid_id)
                 self.logger.info("Cancel sent for order %d", self.bid_id)
                 self.bid_id = 0
+
             if self.ask_id != 0 and ask_order and ask_order.price not in (self.ask_price, 0):
                 self.send_cancel_order(self.ask_id)
                 self.logger.info("Cancel sent for order %d", self.ask_id)
@@ -215,10 +201,10 @@ class AutoTrader(BaseAutoTrader):
                 self.send_insert_order(self.ask_id, Side.SELL, ask_order.price, ask_order.vol, Lifespan.GOOD_FOR_DAY)
                 self.asks[self.ask_id] = Order(price=ask_order.price, vol=ask_order.vol, id=self.ask_id, typ='mm', edge=ask_order.edge)
 
-            self.logger.info(f"Bids: {self.bids}, Asks {self.asks}")            # Load Order book into memory
             self.futures = OrderBook(sequence_number, ask_prices,ask_volumes, bid_prices, bid_volumes)   
         
         elif instrument == Instrument.ETF and self.safe_to_trade: ## arb order
+            self.historical.update(theo)
             order_type = 'arb'
             # Load Order book into memory
             self.etfs = OrderBook(sequence_number, ask_prices, ask_volumes, bid_prices, bid_volumes)
@@ -368,7 +354,12 @@ class AutoTrader(BaseAutoTrader):
     
     def get_theo(self, bid_prices, bid_volumes, ask_prices, ask_volumes) -> float:
         """Get theoretical price"""
-        return np.mean([bid_prices[0], ask_prices[0]])
+        if bid_volumes[0]+ask_volumes[0]>0:
+            num=sum([(bid_prices[i]*bid_volumes[i]+ask_prices[i]*ask_volumes[i])*np.exp(-i) for i in range(len(bid_volumes))])
+            denom=sum([(bid_volumes[i]+ask_volumes[i])*np.exp(-i) for i in range(len(bid_volumes))])
+            return (num/denom)
+        else:
+            return np.mean([bid_prices[0],ask_prices[0]])
 
     def get_edges(self, theo, position):
         """Return bid and ask edge from theo"""
