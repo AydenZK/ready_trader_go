@@ -259,8 +259,9 @@ class AutoTrader(BaseAutoTrader):
 
         if self.position != 100:
             bid_price = int(round((theo + edges[0])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
-            bid_vol = volumes[0]
-            bid = Order(bid_price, bid_vol, -1, abs(theo-bid_price))
+            if bid_price > 0:
+                bid_vol = volumes[0]
+                bid = Order(bid_price, bid_vol, -1, abs(theo-bid_price))
         
         if self.position != -100:
             ask_price = int(round((theo + edges[1])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
