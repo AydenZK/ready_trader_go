@@ -70,11 +70,9 @@ class Historical:
         self.n=0
         
     def update(self, price):
-        if len(self.l2_etf) == 2:
-            self.l2_etf.pop(0)
         self.l2_etf.append(price)
-
-        if len(self.historical_prices[self.l2_etf])>=2:
+        if len(self.l2_etf) == 3:
+            self.l2_etf.pop(0)
             self.n+=1
             self.total+=(self.l2_etf[-1]-self.l2_etf[-2])**2
             self.move=(self.total/self.n)**(1/2)
@@ -108,7 +106,6 @@ class AutoTrader(BaseAutoTrader):
         self.ask_id = self.ask_price = self.bid_id = self.bid_price = self.position = self.futures_position = 0
         
         self.historical = Historical()
-        self.dollar_edge = 0
 
     @property
     def potential_position(self):
@@ -224,7 +221,6 @@ class AutoTrader(BaseAutoTrader):
                         potential_fut_vol -= trade_vol
                         next_id = next(self.order_ids)
                         self.send_insert_order(client_order_id=next_id, side=Side.BUY, price=etf_ask.price, volume=trade_vol, lifespan=Lifespan.FAK) # buy etf
-                        self.custom_log({"ACTION": f"BUY {trade_vol} ETF @{etf_ask.price}, ID: {next_id}, type: {order_type}"})
                         self.bids[next_id] = Order(price=etf_ask.price, vol=trade_vol, id=next_id, typ=order_type, edge=0)
                         self.future_asks[next_id+0.5] = Order(price=None, vol=trade_vol, id=None, typ='arb', edge=0) # potential
 
@@ -241,7 +237,6 @@ class AutoTrader(BaseAutoTrader):
                         potential_fut_vol -= trade_vol
                         next_id = next(self.order_ids)
                         self.send_insert_order(client_order_id=next_id, side=Side.SELL, price=etf_bid.price, volume=trade_vol, lifespan=Lifespan.FAK) # sell etf
-                        self.custom_log({"ACTION": f"SELL {trade_vol} ETF @{etf_bid.price}, ID: {next_id}, type: {order_type}"})
                         self.asks[next_id] = Order(price=etf_bid.price, vol=trade_vol, id=next_id, typ=order_type, edge=0)
                         self.future_bids[next_id+0.5] = Order(price=None, vol=trade_vol, id=None, typ='arb', edge=0) 
             
@@ -250,7 +245,6 @@ class AutoTrader(BaseAutoTrader):
                 if not self.unhedged_timer.is_active:
                     self.unhedged_timer.start()
                 elif self.unhedged_timer.seconds > HEDGE_TIME_LIMIT:
-                    self.custom_log({"TRADING BLACKOUT": f"Unhedged lots for > {HEDGE_TIME_LIMIT} secs"})
                     self.safe_to_trade = False
                     self.canceled_ids = self.cancel_all_orders()
             else: # we are hedged
@@ -270,13 +264,11 @@ class AutoTrader(BaseAutoTrader):
             self.position += volume
             current_bid = self.bids[client_order_id]
             self.bids[client_order_id] = Order(id=client_order_id, price=price, vol=(self.bids[client_order_id].vol-volume), typ=self.bids[client_order_id].typ, edge=self.bids[client_order_id].edge)
-            self.dollar_edge += volume * self.bids[client_order_id].edge
             
             if current_bid.typ == 'arb': # if arb complete hedge
                 next_id = next(self.order_ids)
                 trade_vol = volume
                 self.send_hedge_order(client_order_id=next_id, side=Side.SELL, price=MINIMUM_BID, volume=trade_vol) # selling futures (mkt order)
-                self.custom_log({"ACTION": f"SELL {trade_vol}x FUTURE @{MINIMUM_BID}, ID: {next_id}, type: {current_bid.typ}"})
                 self.future_asks.pop(client_order_id+0.5)
                 self.future_asks[next_id] = Order(id=next_id, price=MINIMUM_BID, vol=trade_vol, typ=current_bid.typ, edge=0)
                 self.hedges[next_id] = Hedge(ETF = current_bid, FUTURE = Order(price=None, vol=trade_vol, id=None, typ='arb', edge=0))
@@ -285,13 +277,11 @@ class AutoTrader(BaseAutoTrader):
             self.position -= volume
             current_ask = self.asks[client_order_id]
             self.asks[client_order_id] = Order(id=client_order_id, price=price, vol=(self.asks[client_order_id].vol-volume),typ= self.asks[client_order_id].typ, edge=self.asks[client_order_id].edge)
-            self.dollar_edge += volume * self.asks[client_order_id].edge
 
             if current_ask.typ == 'arb': # if arb complete hedge
                 next_id = next(self.order_ids)
                 trade_vol = volume
                 self.send_hedge_order(client_order_id=next_id, side=Side.BUY, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume=trade_vol) # buying futures (mkt order)
-                self.custom_log({"ACTION": f"BUY {trade_vol}x FUTURE @{MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS}, ID: {next_id}, type: {current_ask.typ}"})
                 self.future_bids.pop(client_order_id+0.5)
                 self.future_bids[next_id] = Order(id=next_id, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, vol=trade_vol, typ=current_ask.typ, edge=0)
                 self.hedges[next_id] = Hedge(ETF = current_ask, FUTURE = Order(price=None, vol=volume, id=next_id, typ='arb', edge=0))
@@ -328,15 +318,12 @@ class AutoTrader(BaseAutoTrader):
                         trade_vol = self.position + self.futures_position
                         self.send_hedge_order(client_order_id=next_id, side=Side.SELL, price=MINIMUM_BID, volume=trade_vol) # selling futures (mkt order)
                         self.future_asks[next_id] = Order(id=next_id, price=MINIMUM_BID, vol=trade_vol, typ='safe_hedge', edge=0)
-                        self.custom_log({"ACTION": f"SELL {trade_vol}x FUTURE @{MINIMUM_BID}, ID: {next_id}, type: safe_hedge"})
                     
                     elif self.position + self.futures_position < -10:
                         trade_vol = -self.position - self.futures_position
                         self.send_hedge_order(client_order_id=next_id, side=Side.BUY, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume=trade_vol) # buying futures (mkt order)
                         self.future_bids[next_id] = Order(id=next_id, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, vol=trade_vol, typ='safe_hedge', edge=0)
-                        self.custom_log({"ACTION": f"BUY {trade_vol}x FUTURE @{MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS}, ID: {next_id}, type: safe_hedge"})
 
-            self.custom_log()
 
     def on_trade_ticks_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
