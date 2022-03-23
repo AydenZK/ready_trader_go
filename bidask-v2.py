@@ -122,8 +122,8 @@ class AutoTrader(BaseAutoTrader):
         self.historical.update(instrument, theo)
         
         if instrument == Instrument.FUTURE:
-            edges: tuple[float, float] = self.get_edges(theo, position=self.position)
-            volumes: tuple[int, int] = self.get_volumes(position=self.position)
+            edges = self.get_edges(theo, position=self.position)
+            volumes = self.get_volumes(position=self.position)
             bid_order, ask_order = self.get_orders(theo, edges, volumes)
 
             self.logger.info(f"Calculated Bid/Ask: Bid: {bid_order}, Ask: {ask_order}" )
@@ -227,7 +227,7 @@ class AutoTrader(BaseAutoTrader):
         else:
             return np.mean([bid_prices[0],ask_prices[0]])
 
-    def get_edges(self, theo, position) -> tuple[int, int]:
+    def get_edges(self, theo, position):
         """Return bid and ask edge from theo"""
 
         if position>=0:
@@ -247,7 +247,7 @@ class AutoTrader(BaseAutoTrader):
 
         return bid_edge, ask_edge
 
-    def get_volumes(self, position) -> tuple[int, int]:
+    def get_volumes(self, position):
         """Return bid and ask volumes"""
         return (LOT_SIZE, LOT_SIZE)
 
@@ -259,7 +259,7 @@ class AutoTrader(BaseAutoTrader):
             )
         return x,y 
 
-    def get_orders(self, theo, edges, volumes) -> tuple[Order, Order]:
+    def get_orders(self, theo, edges, volumes):
         bid = None
         ask = None
         if self.position != 100:
