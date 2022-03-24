@@ -26,9 +26,9 @@ from ready_trader_go import BaseAutoTrader, Instrument, Lifespan, MAXIMUM_ASK, M
 
 LOT_SIZE = 10
 POSITION_LIMIT = 100
-ARB_LIMIT = 95
+ARB_LIMIT = 85
 TICK_SIZE_IN_CENTS = 100
-HEDGE_TIME_LIMIT = 14 # secs
+HEDGE_TIME_LIMIT = 10 # secs
 
 Order = NamedTuple('Order', [('price', int), ('vol', int), ('id', int), ('typ', str), ('edge', float)])
 PotentialVolume = NamedTuple('PotentialVolume', [('max', int), ('min', int)])
@@ -92,7 +92,6 @@ class AutoTrader(BaseAutoTrader):
         super().__init__(loop, team_name, secret)
         self.order_ids = itertools.count(1)
         self.canceled_ids = set()
-        self.hedges = {}
         self.unhedged_timer = UnhedgedTimer(event_loop=self.event_loop)
 
         self.safe_to_trade = True
@@ -150,8 +149,7 @@ class AutoTrader(BaseAutoTrader):
 
         elif client_order_id in self.future_bids.keys(): # Sold ETF, Bought Future
             self.future_bids.pop(client_order_id) 
-            self.futures_position += volume
-        
+            self.futures_position += volume        
 
     def on_order_book_update_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
                                      ask_volumes: List[int], bid_prices: List[int], bid_volumes: List[int]) -> None:
@@ -169,8 +167,8 @@ class AutoTrader(BaseAutoTrader):
         theo = self.get_theo(bid_prices, bid_volumes, ask_prices, ask_volumes)
                 
         if instrument == Instrument.FUTURE and self.safe_to_trade: ## mm order:
-            edges = self.get_edges(theo, position=self.position)
-            volumes = self.get_volumes(position=self.position)
+            edges = self.get_edges()
+            volumes = self.get_volumes()
             bid_order, ask_order = self.get_orders(theo, edges, volumes)
 
             self.logger.info(f"Calculated Bid/Ask: Bid: {bid_order}, Ask: {ask_order}" )
@@ -186,7 +184,7 @@ class AutoTrader(BaseAutoTrader):
                 self.logger.info("Cancel sent for order %d", self.ask_id)
                 self.ask_id = 0
 
-            if bid_order and self.bid_id == 0 and bid_order.price != 0 and self.potential_position.max+bid_order.vol <= POSITION_LIMIT:
+            if bid_order and self.bid_id == 0 and bid_order.price != 0 and self.potential_position.max + bid_order.vol <= POSITION_LIMIT:
                 self.bid_id = next(self.order_ids)
                 self.bid_price = bid_order.price
                 self.send_insert_order(self.bid_id, Side.BUY, bid_order.price, bid_order.vol, Lifespan.GOOD_FOR_DAY)
@@ -269,9 +267,9 @@ class AutoTrader(BaseAutoTrader):
                 next_id = next(self.order_ids)
                 trade_vol = volume
                 self.send_hedge_order(client_order_id=next_id, side=Side.SELL, price=MINIMUM_BID, volume=trade_vol) # selling futures (mkt order)
-                self.future_asks.pop(client_order_id+0.5)
+                if client_order_id+0.5 in self.future_asks.keys():
+                    self.future_asks.pop(client_order_id+0.5) 
                 self.future_asks[next_id] = Order(id=next_id, price=MINIMUM_BID, vol=trade_vol, typ=current_bid.typ, edge=0)
-                self.hedges[next_id] = Hedge(ETF = current_bid, FUTURE = Order(price=None, vol=trade_vol, id=None, typ='arb', edge=0))
                 
         elif client_order_id in self.asks.keys():
             self.position -= volume
@@ -282,9 +280,9 @@ class AutoTrader(BaseAutoTrader):
                 next_id = next(self.order_ids)
                 trade_vol = volume
                 self.send_hedge_order(client_order_id=next_id, side=Side.BUY, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume=trade_vol) # buying futures (mkt order)
-                self.future_bids.pop(client_order_id+0.5)
+                if client_order_id+0.5 in self.future_bids.keys():
+                    self.future_bids.pop(client_order_id+0.5)
                 self.future_bids[next_id] = Order(id=next_id, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, vol=trade_vol, typ=current_ask.typ, edge=0)
-                self.hedges[next_id] = Hedge(ETF = current_ask, FUTURE = Order(price=None, vol=volume, id=next_id, typ='arb', edge=0))
 
     def on_order_status_message(self, client_order_id: int, fill_volume: int, remaining_volume: int,
                                 fees: int) -> None:
@@ -301,6 +299,15 @@ class AutoTrader(BaseAutoTrader):
                          client_order_id, fill_volume, remaining_volume, fees)
 
         if remaining_volume == 0:
+            if client_order_id in self.asks.keys():
+                current = self.asks[client_order_id]
+                if current.typ == 'arb' and client_order_id+0.5 in self.future_bids.keys():
+                    self.future_bids.pop(client_order_id+0.5)
+            elif client_order_id in self.bids.keys():
+                current = self.bids[client_order_id]
+                if current.typ == 'arb' and client_order_id+0.5 in self.future_asks.keys():
+                    self.future_asks.pop(client_order_id+0.5)
+
             if client_order_id == self.bid_id:
                 self.bid_id = 0
             elif client_order_id == self.ask_id:
@@ -315,14 +322,16 @@ class AutoTrader(BaseAutoTrader):
                 if len(self.bids) == len(self.asks) == len(self.canceled_ids) == 0:
                     next_id = next(self.order_ids)
                     if self.position + self.futures_position > 10:
-                        trade_vol = self.position + self.futures_position
-                        self.send_hedge_order(client_order_id=next_id, side=Side.SELL, price=MINIMUM_BID, volume=trade_vol) # selling futures (mkt order)
-                        self.future_asks[next_id] = Order(id=next_id, price=MINIMUM_BID, vol=trade_vol, typ='safe_hedge', edge=0)
+                        trade_vol = self.position + self.potential_fut_position.min 
+                        if trade_vol > 0:
+                            self.send_hedge_order(client_order_id=next_id, side=Side.SELL, price=MINIMUM_BID, volume=trade_vol) # selling futures (mkt order)
+                            self.future_asks[next_id] = Order(id=next_id, price=MINIMUM_BID, vol=trade_vol, typ='safe_hedge', edge=0)
                     
                     elif self.position + self.futures_position < -10:
-                        trade_vol = -self.position - self.futures_position
-                        self.send_hedge_order(client_order_id=next_id, side=Side.BUY, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume=trade_vol) # buying futures (mkt order)
-                        self.future_bids[next_id] = Order(id=next_id, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, vol=trade_vol, typ='safe_hedge', edge=0)
+                        trade_vol = -self.position - self.potential_fut_position.min
+                        if trade_vol > 0:
+                            self.send_hedge_order(client_order_id=next_id, side=Side.BUY, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, volume=trade_vol) # buying futures (mkt order)
+                            self.future_bids[next_id] = Order(id=next_id, price=MAXIMUM_ASK//TICK_SIZE_IN_CENTS*TICK_SIZE_IN_CENTS, vol=trade_vol, typ='safe_hedge', edge=0)
 
 
     def on_trade_ticks_message(self, instrument: int, sequence_number: int, ask_prices: List[int],
@@ -348,22 +357,22 @@ class AutoTrader(BaseAutoTrader):
         else:
             return np.mean([bid_prices[0],ask_prices[0]])
 
-    def get_edges(self, theo, position):
+    def get_edges(self):
         """Return bid and ask edge from theo"""
-        if position>=0:
-            sell_prob=0.45+position*0.0005
-            buy_prob=0.45-position*0.0045
+        if self.position>=0:
+            sell_prob=0.45+self.position*0.0005
+            buy_prob=0.45-self.position*0.0045
 
         else:
-            sell_prob=0.45+position*0.0045
-            buy_prob=0.45-position*0.0005
+            sell_prob=0.45+self.position*0.0045
+            buy_prob=0.45-self.position*0.0005
 
         bid_edge = self.historical.move*st.norm.ppf(buy_prob)
         ask_edge = self.historical.move*st.norm.ppf(1-sell_prob)
 
         return bid_edge, ask_edge
 
-    def get_volumes(self, position):
+    def get_volumes(self):
         """Return bid and ask volumes"""
         return (LOT_SIZE, LOT_SIZE)
 
@@ -381,16 +390,20 @@ class AutoTrader(BaseAutoTrader):
         if self.historical.move==0:
             return (None, None)
 
-        if self.position != 100:
+        if self.position != POSITION_LIMIT:
             bid_price = int(round((theo + edges[0])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
-            if bid_price > 0:
-                bid_vol = volumes[0]
+            bid_vol = volumes[0]
+            if bid_price > 0 and bid_vol > 0:
                 bid = Order(bid_price, bid_vol, -1, None, abs(theo-bid_price))
         
-        if self.position != -100:
-            ask_price = int(round((theo + edges[1])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
-            ask_vol = volumes[1]
-            ask = Order(ask_price, ask_vol, -1, None, abs(theo-ask_price))
+        if self.position != -POSITION_LIMIT:
+            try:
+                ask_price = int(round((theo + edges[1])/TICK_SIZE_IN_CENTS)*TICK_SIZE_IN_CENTS)
+                ask_vol = volumes[1]
+                if ask_vol > 0:
+                    ask = Order(ask_price, ask_vol, -1, None, abs(theo-ask_price))
+            except Exception as e:
+                self.logger.info(f"CALC ERROR: {e}")
 
         return self.one_tick_diff(bid, ask)
 
